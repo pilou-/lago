@@ -41,19 +41,13 @@ import json
 import lockfile
 import os
 
-import constants
-import utils
+import lago.config
+import lago.utils
 
 #: Lower range for the allowed subnets
 MIN_SUBNET = 200
 #: Upper range for the allowed subnets
 MAX_SUBNET = 209
-
-# FIXME make more robust and configurable
-#: Path to the directory where the net leases are stored
-LEASE_DIR = constants.SUBNET_LEASE_DIR
-#: Path to the net leases lock
-LOCK_FILE = os.path.join(LEASE_DIR, 'leases.lock')
 
 
 def is_leasable_subnet(subnet):
@@ -76,10 +70,12 @@ def _validate_lease_dir_present(func):
     necessary
     """
 
+    lease_dir = lago.config.get('lease_dir')
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if not os.path.isdir(LEASE_DIR):
-            os.makedirs(LEASE_DIR)
+        if not os.path.isdir(lease_dir):
+            os.makedirs(lease_dir)
         return func(*args, **kwargs)
 
     return wrapper
@@ -93,7 +89,10 @@ def _locked(func):
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        with lockfile.LockFile(LOCK_FILE):
+        lease_dir = lago.config.get('lease_dir')
+        lock_file = os.path.join(lease_dir, 'leases.lock')
+
+        with lockfile.LockFile(lock_file):
             return func(*args, **kwargs)
 
     return wrapper
@@ -114,7 +113,7 @@ def _take_lease(path, uuid_path):
     with open(uuid_path) as f:
         uuid = f.read()
     with open(path, 'w') as f:
-        utils.json_dump((uuid_path, uuid), f)
+        lago.utils.json_dump((uuid_path, uuid), f)
 
 
 def _lease_owned(path, current_uuid_path):
@@ -179,8 +178,10 @@ def _acquire(uuid_path):
         Raise exception or something instead of returning None so the
         caller can handle the failure case
     """
+
+    lease_dir = lago.config.get('lease_dir')
     for index in range(MIN_SUBNET, MAX_SUBNET + 1):
-        lease_file = os.path.join(LEASE_DIR, '%d.lease' % index)
+        lease_file = os.path.join(lease_dir, '%d.lease' % index)
         if os.path.exists(lease_file):
             if _lease_valid(lease_file):
                 continue
@@ -219,7 +220,9 @@ def _release(index):
     Returns:
         None
     """
-    lease_file = os.path.join(LEASE_DIR, '%d.lease' % index)
+
+    lease_dir = lago.config.get('lease_dir')
+    lease_file = os.path.join(lease_dir, '%d.lease' % index)
     os.unlink(lease_file)
 
 
